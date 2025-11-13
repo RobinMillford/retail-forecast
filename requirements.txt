@@ -5,3 +5,4 @@ mlflow
 upstash-redis
 python-dotenv
 scikit-learn
+kaggle
