@@ -2,7 +2,7 @@ name: Nightly Retraining Pipeline
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * *" # Runs at 00:00 UTC every day
   workflow_dispatch:
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: 1. Download Dataset from Kaggle
+      - name: 1. Download and Fix Dataset
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
@@ -28,11 +28,18 @@ jobs:
           pip install kaggle
           mkdir -p ./data
 
-          # Download the file directly
+          # Download the file
           kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
 
-          # We don't need to unzip!
-          echo "✅ Dataset downloaded successfully."
+          # Force rename to .zip
+          mv ./data/train.csv ./data/train.zip
+
+          # Unzip to get the REAL csv (~125MB)
+          unzip -o ./data/train.zip -d ./data/
+
+          # Clean up
+          rm ./data/train.zip
+          echo "✅ Dataset extracted successfully."
 
       - name: 2. Run Training Script
         env:
