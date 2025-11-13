@@ -82,7 +82,7 @@ with col1:
         # Theme-aware metric
         st.metric(label=f"Live Aggregate Sales ({family})", value=f"${current_volume:,.2f}")
         
-        st.info("Run `producer.py` and `feature_store.py` in the background to see this number update!")
+        # st.info("Run `producer.py` and `feature_store.py` in the background to see this number update!")
 
         # --- ARCHITECTURE DIAGRAM (Code-based) ---
         st.markdown("### System Architecture")
