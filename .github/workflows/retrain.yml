@@ -4,7 +4,7 @@ name: Nightly Retraining Pipeline
 on:
   schedule:
     - cron: "0 0 * * *" # Runs at 00:00 UTC every day
-  workflow_dispatch: # Allows you to click "Run Now" manually
+  workflow_dispatch: 
 
 jobs:
   train-and-commit:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"
+          python-version: "3.11"
 
       - name: Install Dependencies
         run: pip install -r requirements.txt
