@@ -28,19 +28,16 @@ jobs:
           pip install kaggle
           mkdir -p ./data
 
-          # Download the specific file
+          # Download the file directly
           kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
 
-          # DEBUG: List files to see what Kaggle actually downloaded
-          echo "📂 Files in ./data folder:"
-          ls -lh ./data/
+          # Check if it's a zip or csv (Robust Fix)
+          if [ -f ./data/train.csv.zip ]; then
+            unzip -o ./data/train.csv.zip -d ./data/
+            rm ./data/train.csv.zip
+          fi
 
-          # Robust Unzip: Find ANY .zip file and unzip it
-          unzip -o ./data/*.zip -d ./data/
-
-          # Clean up
-          rm ./data/*.zip
-          echo "✅ Dataset ready."
+          echo "✅ Dataset downloaded successfully."
 
       - name: 2. Run Producer Batch
         env:
