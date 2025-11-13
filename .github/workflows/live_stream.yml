@@ -21,6 +21,23 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
+      # --- NEW STEP: DOWNLOAD DATA FROM KAGGLE ---
+      - name: Download Dataset from Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          # Ensure kaggle library is installed
+          pip install kaggle
+          mkdir -p ./data
+          # Download only train.csv
+          kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
+          # Unzip it
+          unzip ./data/train.csv.zip -d ./data/
+          # Remove zip file to save space
+          rm ./data/train.csv.zip
+          echo "✅ Dataset downloaded successfully."
+
       - name: 1. Run Producer Batch
         env:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}

@@ -4,7 +4,7 @@ name: Nightly Retraining Pipeline
 on:
   schedule:
     - cron: "0 0 * * *" # Runs at 00:00 UTC every day
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   train-and-commit:
@@ -21,11 +21,28 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
+      # --- NEW STEP: DOWNLOAD DATA FROM KAGGLE ---
+      - name: Download Dataset from Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          pip install kaggle
+          mkdir -p ./data
+          kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
+          unzip ./data/train.csv.zip -d ./data/
+          rm ./data/train.csv.zip
+          echo "✅ Dataset downloaded successfully."
+
       - name: Run Training Script
         env:
+          # Needs MLflow keys to log metrics
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
           MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+          # Also needs Upstash keys if your train.py loads env vars
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: python train.py
 
       - name: Commit New Model
@@ -34,5 +51,10 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions-bot@github.com'
           git add sales_model.json
-          git commit -m "🤖 [CI/CD] Automated nightly model retrain"
-          git push
+          # Check for changes before committing to prevent errors if model didn't change
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "🤖 [CI/CD] Automated nightly model retrain"
+            git push
+          fi
