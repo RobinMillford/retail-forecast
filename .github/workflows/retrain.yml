@@ -31,12 +31,7 @@ jobs:
           # Download the file directly
           kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
 
-          # Check if it's a zip or csv (Robust Fix)
-          if [ -f ./data/train.csv.zip ]; then
-            unzip -o ./data/train.csv.zip -d ./data/
-            rm ./data/train.csv.zip
-          fi
-
+          # We don't need to unzip!
           echo "✅ Dataset downloaded successfully."
 
       - name: 2. Run Training Script
