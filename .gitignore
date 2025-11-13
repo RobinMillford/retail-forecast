@@ -1,0 +1,14 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Data
+data/
+
+# Secrets
+.env
+
+# Model (Optional - good to gitignore if > 100MB)
+sales_model.json
+test_setup.py
