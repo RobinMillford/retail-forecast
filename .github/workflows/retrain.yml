@@ -20,7 +20,7 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: 1. Download and Fix Dataset
+      - name: 1. Download Full Dataset from Kaggle
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
@@ -28,36 +28,38 @@ jobs:
           pip install kaggle
           mkdir -p ./data
 
-          # Download the file
-          kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
+          # Download the ENTIRE competition (all CSVs)
+          kaggle competitions download -c store-sales-time-series-forecasting -p ./data/
 
-          # Force rename to .zip
-          mv ./data/train.csv ./data/train.zip
+          # Unzip all the files (train.csv, oil.csv, stores.csv, etc.)
+          unzip -o ./data/*.zip -d ./data/
 
-          # Unzip to get the REAL csv (~125MB)
-          unzip -o ./data/train.zip -d ./data/
+          # Clean up the zip file
+          rm ./data/*.zip
+          echo "✅ All datasets (Oil, Stores, Holidays, Train) extracted."
+          ls -lh ./data/
 
-          # Clean up
-          rm ./data/train.zip
-          echo "✅ Dataset extracted successfully."
-
-      - name: 2. Run Training Script
+      - name: 2. Run Advanced Training Script
         env:
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
           MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        # Make sure you are running the advanced train.py
         run: python train.py
 
-      - name: 3. Commit New Model
+      - name: 3. Commit New Model (v2)
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions-bot@github.com'
-          git add sales_model.json
+
+          # IMPORTANT: We are now adding the NEW model file
+          git add sales_model_v2.json
+
           if git diff --staged --quiet; then
-            echo "No changes to commit."
+            echo "No changes to commit. Model file is the same."
           else
-            git commit -m "🤖 [CI/CD] Automated nightly model retrain"
+            git commit -m "🤖 [CI/CD] Automated nightly model retrain (v2)"
             git push
           fi

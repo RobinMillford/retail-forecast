@@ -3,6 +3,7 @@ from upstash_redis import Redis
 import os
 from dotenv import load_dotenv
 import random
+import datetime
 
 # --- CONFIG ---
 load_dotenv()
@@ -18,35 +19,42 @@ except Exception as e:
     print(f"❌ Failed to connect to Redis: {e}")
     exit()
 
-# 2. Prepare Item List for Simulation
-print("📂 Loading 'data/train.csv' for simulation...")
+# 2. Load FULL Data (Unlock the entire dataset)
+print("📂 Loading full dataset for simulation...")
 try:
-    # --- THE FIX IS HERE ---
-    # Added encoding='latin1' to handle special characters
-    df = pd.read_csv("data/train.csv", encoding='latin1', nrows=50000) 
+    # FIX 1: Removed 'nrows' limit. Reads all 3M+ rows (approx 125MB)
+    # FIX 2: Added 'low_memory=False' to speed up loading and fix type warnings
+    df = pd.read_csv("data/train.csv", encoding='latin1', low_memory=False)
     
-    df = df[(df['store_nbr'] == 1) & (df['family'] != 'OTHER')]
-    item_families = df['family'].unique()
-    if len(item_families) == 0:
-        raise Exception("No item families found in data.")
-    print(f"  ✅ Loaded {len(item_families)} item families.")
+    # Optimization: Only keep columns we need to save RAM
+    df = df[['store_nbr', 'family', 'sales', 'onpromotion']]
+    
+    # Get unique families for fallback if needed, but we primarily sample rows now
+    print(f"  ✅ Loaded {len(df):,} sales records from 54 stores.")
 
 except Exception as e:
-    print(f"❌ CRITICAL: Failed to load 'data/train.csv': {e}")
+    print(f"❌ CRITICAL: Failed to load data: {e}")
     exit()
-
 
 print(f"🚀 Starting Batch Producer... Sending {BATCH_SIZE} random sales.")
 
 # 3. The Batch Loop
 for i in range(BATCH_SIZE):
-    item = random.choice(item_families)
+    # FIX 3: Randomly sample 1 real transaction from the huge dataset
+    # This gives us realistic correlations (e.g., Bread sells more than Automotive)
+    # but allows us to run forever without "running out" of data.
+    row = df.sample(1).iloc[0]
+    
+    # FIX 4: SYNTHETIC DATE (Time Travel)
+    # We ignore the 2017 date and use "Right Now" to make the dashboard look live.
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d")
     
     event = {
-        "store_nbr": 1,
-        "family": item,
-        "sales": round(random.uniform(5.0, 500.0), 2),
-        "onpromotion": random.randint(0, 1),
+        "date": current_time,
+        "store_nbr": int(row['store_nbr']),
+        "family": row['family'],
+        "sales": float(row['sales']),
+        "onpromotion": int(row['onpromotion']),
         "batch_id": i
     }
     
@@ -56,7 +64,8 @@ for i in range(BATCH_SIZE):
         
     try:
         redis.execute(["XADD", STREAM_KEY, "*"] + flat_args)
-        print(f"  ✅ Sent: {event['family'][:10]}.. | Sales: {event['sales']}")
+        # Short log to save space
+        print(f"  ✅ {event['date']} | Store {event['store_nbr']} | {event['family'][:10]}.. | ${event['sales']}")
     except Exception as e:
         print(f"  ❌ Error sending to stream: {e}")
 

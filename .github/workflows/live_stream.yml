@@ -21,7 +21,7 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: 1. Download and Fix Dataset
+      - name: 1. Download Full Dataset from Kaggle
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
@@ -29,18 +29,17 @@ jobs:
           pip install kaggle
           mkdir -p ./data
 
-          # Download the file (Kaggle sends a ZIP but names it .csv sometimes)
-          kaggle competitions download -c store-sales-time-series-forecasting -f train.csv -p ./data/
+          # Download the ENTIRE competition archive (all csv files)
+          # We removed '-f train.csv' so it downloads everything
+          kaggle competitions download -c store-sales-time-series-forecasting -p ./data/
 
-          # Force rename to .zip
-          mv ./data/train.csv ./data/train.zip
+          # Unzip the main archive
+          unzip -o ./data/*.zip -d ./data/
 
-          # Unzip to get the REAL csv (~125MB)
-          unzip -o ./data/train.zip -d ./data/
+          # Clean up the zip file to save space
+          rm ./data/*.zip
 
-          # Clean up
-          rm ./data/train.zip
-          echo "✅ Dataset extracted successfully."
+          echo "✅ All datasets (Oil, Holidays, Stores, Train) extracted."
           ls -lh ./data/
 
       - name: 2. Run Producer Batch

@@ -1,6 +1,7 @@
 from upstash_redis import Redis
 import os
 from dotenv import load_dotenv
+import time
 
 # --- CONFIG ---
 load_dotenv()
@@ -35,16 +36,14 @@ print(f"🚀 Starting Batch Processor for consumer '{CONSUMER_NAME}'...")
 processed_count = 0
 while True:
     try:
-        # --- THE FIX IS HERE ---
-        # This command does NOT have 'BLOCK'. It reads new messages and exits if none.
+        # Read up to 100 messages (NO BLOCKING)
         response = redis.execute([
             "XREADGROUP", "GROUP", GROUP_NAME, CONSUMER_NAME, 
             "COUNT", "100",
-            "STREAMS", STREAM_KEY, ">"  # '>' means read new messages
+            "STREAMS", STREAM_KEY, ">" 
         ])
         
         if not response:
-            # This is the expected behavior: no new data.
             print("No new data to process. Shutting down.")
             break 
 
@@ -54,21 +53,31 @@ while True:
             msg_id = message[0]
             fields_raw = message[1]
             
+            # Parse fields
             data_dict = {fields_raw[i]: fields_raw[i+1] for i in range(0, len(fields_raw), 2)}
             
             item_family = data_dict.get('family')
+            store_nbr = data_dict.get('store_nbr', '?')
+            event_date = data_dict.get('date', 'Unknown')
             sales = float(data_dict.get('sales', 0.0))
             
             if not item_family:
+                # Skip invalid data but acknowledge it so we don't get stuck
                 redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id]) 
                 continue 
                 
             feature_key = f"feature:sales_volume:{item_family}"
             
+            # Update the feature store (Aggregation)
             redis.incrbyfloat(feature_key, sales)
+            
+            # Acknowledge message
             redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id])
             processed_count += 1
-            print(f"  🔄 Processed: {item_family} | Added {sales}")
+            
+            # --- IMPROVED LOGGING ---
+            # Shows Date and Store to prove data is "Live" and "Diverse"
+            print(f"  🔄 {event_date} | Store {store_nbr} | {item_family} | +${sales}")
 
     except Exception as e:
         print(f"❌ Error during processing: {e}")
