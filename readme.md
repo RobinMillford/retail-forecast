@@ -101,7 +101,7 @@ If you want to run this pipeline on your own machine:
 1.  **Clone the repository:**
 
     ```bash
-    git clone [https://github.com/YOUR_USERNAME/retail-forecast.git](https://github.com/YOUR_USERNAME/retail-forecast.git)
+    git clone https://github.com/RobinMillford/retail-forecast.git
     cd retail-forecast
     ```
 
