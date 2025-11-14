@@ -3,12 +3,14 @@ import os
 from dotenv import load_dotenv
 import time
 from datetime import datetime
+import json
 
 # --- CONFIG ---
 load_dotenv()
 STREAM_KEY = "store_sales_stream"
 GROUP_NAME = "ml_feature_group"
 CONSUMER_NAME = "feature_processor_batch_1"
+TRAINING_BUFFER_KEY = "training_data_buffer" # <-- NEW KEY FOR CONTINUOUS TRAINING
 
 # 1. Connect to Redis
 print("🔌 Connecting to Redis...")
@@ -63,35 +65,37 @@ while True:
                 redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id]) 
                 continue 
             
-            # --- NEW: Time-Bucket Key Generation ---
+            # --- TASK 1: UPDATE DASHBOARD AGGREGATES ---
             try:
-                # Parse the date from the event
                 event_date = datetime.strptime(event_date_str, "%Y-%m-%d")
-                
-                # Create keys for Day, Week, and Month
                 key_daily = f"feature:sales_daily:{item_family}:{event_date.strftime('%Y-%m-%d')}"
-                key_weekly = f"feature:sales_weekly:{item_family}:{event_date.strftime('%Y-W%U')}" # %U = Week of year
+                key_weekly = f"feature:sales_weekly:{item_family}:{event_date.strftime('%Y-W%U')}"
                 key_monthly = f"feature:sales_monthly:{item_family}:{event_date.strftime('%Y-%m')}"
-
-                # Update all three aggregates at once
+                
                 redis.incrbyfloat(key_daily, sales)
                 redis.incrbyfloat(key_weekly, sales)
                 redis.incrbyfloat(key_monthly, sales)
-                
-                # Acknowledge message
-                redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id])
-                processed_count += 1
-                
-                print(f"  🔄 {event_date_str} | Store {store_nbr} | {item_family} | +${sales}")
 
             except ValueError:
-                # Date was in a weird format, skip it
                 print(f"  SKIPPED: Invalid date format {event_date_str}")
                 redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id]) 
                 continue
+
+            # --- TASK 2 (NEW): SAVE RAW DATA FOR TRAINING ---
+            # We save the original dictionary (as a JSON string) to our training buffer list
+            redis.lpush(TRAINING_BUFFER_KEY, json.dumps(data_dict))
+            
+            # --- TASK 3: ACKNOWLEDGE MESSAGE ---
+            redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id])
+            processed_count += 1
+            
+            print(f"  🔄 Processed & Saved: {event_date_str} | Store {store_nbr} | {item_family} | +${sales}")
 
     except Exception as e:
         print(f"❌ Error during processing: {e}")
         break 
 
-print(f"\nBatch complete. Processed {processed_count} messages.")
+# After processing, we'll trim the buffer to ~100k records to save memory
+# This keeps the last ~2 days of data for training (100 * 288 runs/day)
+redis.ltrim(TRAINING_BUFFER_KEY, 0, 100000)
+print(f"\nBatch complete. Processed {processed_count} messages. Training buffer trimmed.")

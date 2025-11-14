@@ -6,3 +6,7 @@ upstash-redis
 python-dotenv
 scikit-learn
 kaggle
+prophet
+tensorflow
+joblib
+plotly

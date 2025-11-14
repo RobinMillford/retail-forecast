@@ -19,41 +19,48 @@ except Exception as e:
     print(f"❌ Failed to connect to Redis: {e}")
     exit()
 
-# 2. Load FULL Data (Unlock the entire dataset)
-print("📂 Loading full dataset for simulation...")
+# 2. Load SIMULATION Data (from test.csv to prevent data duplication)
+print("📂 Loading 'data/test.csv' for simulation...")
 try:
-    # FIX 1: Removed 'nrows' limit. Reads all 3M+ rows (approx 125MB)
-    # FIX 2: Added 'low_memory=False' to speed up loading and fix type warnings
-    df = pd.read_csv("data/train.csv", encoding='latin1', low_memory=False)
+    # --- THIS IS THE FIX ---
+    # We now read from test.csv. This file has NO sales data,
+    # so we are truly simulating new, unseen events.
+    df = pd.read_csv("data/test.csv", encoding='latin1', low_memory=False)
     
-    # Optimization: Only keep columns we need to save RAM
-    df = df[['store_nbr', 'family', 'sales', 'onpromotion']]
+    # Optimization: Only keep columns we need
+    df = df[['store_nbr', 'family', 'onpromotion']]
     
-    # Get unique families for fallback if needed, but we primarily sample rows now
-    print(f"  ✅ Loaded {len(df):,} sales records from 54 stores.")
+    print(f"  ✅ Loaded {len(df):,} future events to simulate.")
 
 except Exception as e:
     print(f"❌ CRITICAL: Failed to load data: {e}")
     exit()
 
-print(f"🚀 Starting Batch Producer... Sending {BATCH_SIZE} random sales.")
+print(f"🚀 Starting Batch Producer... Sending {BATCH_SIZE} simulated sales.")
 
 # 3. The Batch Loop
 for i in range(BATCH_SIZE):
-    # FIX 3: Randomly sample 1 real transaction from the huge dataset
-    # This gives us realistic correlations (e.g., Bread sells more than Automotive)
-    # but allows us to run forever without "running out" of data.
+    # Randomly sample 1 event from the "future" (test.csv)
     row = df.sample(1).iloc[0]
     
-    # FIX 4: SYNTHETIC DATE (Time Travel)
-    # We ignore the 2017 date and use "Right Now" to make the dashboard look live.
+    # --- SYNTHETIC DATA GENERATION ---
+    # 1. Use today's date to make it "live"
     current_time = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    # 2. Invent a realistic sales number
+    # We invent a base sale. If it's on promo, we boost it.
+    base_sales = random.uniform(5.0, 500.0)
+    if row['onpromotion'] == 1:
+        base_sales *= 1.5 # 50% sales boost for promo
+        
+    simulated_sales = round(base_sales, 2)
+    # ---------------------------------
     
     event = {
         "date": current_time,
         "store_nbr": int(row['store_nbr']),
         "family": row['family'],
-        "sales": float(row['sales']),
+        "sales": simulated_sales, # Use the new simulated sales
         "onpromotion": int(row['onpromotion']),
         "batch_id": i
     }

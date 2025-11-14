@@ -12,3 +12,4 @@ data/
 # Model (Optional - good to gitignore if > 100MB)
 # sales_model.json
 test_setup.py
+retail_architecture.xml

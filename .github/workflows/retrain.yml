@@ -27,14 +27,8 @@ jobs:
         run: |
           pip install kaggle
           mkdir -p ./data
-
-          # Download the ENTIRE competition (all CSVs)
           kaggle competitions download -c store-sales-time-series-forecasting -p ./data/
-
-          # Unzip all the files (train.csv, oil.csv, stores.csv, etc.)
           unzip -o ./data/*.zip -d ./data/
-
-          # Clean up the zip file
           rm ./data/*.zip
           echo "✅ All datasets (Oil, Stores, Holidays, Train) extracted."
           ls -lh ./data/
@@ -46,20 +40,24 @@ jobs:
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-        # Make sure you are running the advanced train.py
         run: python train.py
 
-      - name: 3. Commit New Model (v2)
+      - name: 3. Commit New Models & Encoders
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions-bot@github.com'
 
-          # IMPORTANT: We are now adding the NEW model file
-          git add sales_model_v2.json
+          # Add all the artifacts
+          git add best_model_v2.json
+          git add long_term_forecast.pkl  # <-- ADDED NEW MODEL
+          git add family_encoder.joblib
+          git add city_encoder.joblib
+          git add state_encoder.joblib
+          git add type_encoder.joblib
 
           if git diff --staged --quiet; then
-            echo "No changes to commit. Model file is the same."
+            echo "No changes to commit. Model files are the same."
           else
-            git commit -m "🤖 [CI/CD] Automated nightly model retrain (v2)"
+            git commit -m "🤖 [CI/CD] Automated nightly model retrain (XGB + Prophet)"
             git push
           fi

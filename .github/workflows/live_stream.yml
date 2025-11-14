@@ -3,7 +3,7 @@ name: Live Data Stream (Micro-Batch)
 on:
   schedule:
     # This runs the job every 5 minutes
-    - cron: "*/5 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -29,20 +29,19 @@ jobs:
           pip install kaggle
           mkdir -p ./data
 
-          # Download the ENTIRE competition archive (all csv files)
-          # We removed '-f train.csv' so it downloads everything
+          # Download the ENTIRE competition (all CSVs)
+          # This ensures test.csv is available for the producer
           kaggle competitions download -c store-sales-time-series-forecasting -p ./data/
 
-          # Unzip the main archive
+          # Unzip all the files
           unzip -o ./data/*.zip -d ./data/
 
-          # Clean up the zip file to save space
+          # Clean up the zip file
           rm ./data/*.zip
-
-          echo "✅ All datasets (Oil, Holidays, Stores, Train) extracted."
+          echo "✅ All datasets (Train, Test, Oil, etc.) extracted."
           ls -lh ./data/
 
-      - name: 2. Run Producer Batch
+      - name: 2. Run Producer Batch (v2)
         env:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
