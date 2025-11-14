@@ -21,17 +21,17 @@ except Exception as e:
 def load_xgb_model():
     try:
         model = xgb.XGBRegressor()
-        model.load_model("sales_model.json")
+        model.load_model("sales_model_v2.json")
         return model
     except Exception as e:
-        st.error(f"Failed to load model 'sales_model.json'. Did you run train.py?\n{e}")
+        st.error(f"Failed to load model 'sales_model_v2.json'. Did you run train.py?\n{e}")
         st.stop()
 model = load_xgb_model()
 
 # --- UI CONFIG ---
 st.set_page_config(page_title="Retail AI Dashboard", page_icon="🛒", layout="wide")
 
-# Custom CSS for metrics
+# Custom CSS
 st.markdown(
     """
     <style>
@@ -52,7 +52,7 @@ st.markdown(
 
 # --- HEADER ---
 st.markdown("<h1 style='text-align: center; color: #1E88E5;'>🛒 Retail Demand Forecast</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-size: 18px;'>End-to-End MLOps: <b>Live Ingestion</b> • <b>Feature Store</b> • <b>Inference</b></p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-size: 18px;'>End-to-End MLOps: <b>Live Ingestion</b> • <b>Time-Bucketed Feature Store</b> • <b>Inference</b></p>", unsafe_allow_html=True)
 st.divider()
 
 # --- MAIN COLUMNS ---
@@ -66,27 +66,45 @@ with col1:
         st.subheader("📡 Live Feature Store")
         st.caption("Real-time aggregation of sales data flowing through Redis Streams.")
         
-        # 1. Select Item
+        # --- NEW: Time Window Selector ---
+        time_window = st.radio(
+            "Select Time Window",
+            ("Today", "This Week", "This Month"),
+            horizontal=True,
+        )
+        
         ITEM_FAMILIES = (
             'GROCERY I', 'BEVERAGES', 'PRODUCE', 'CLEANING', 'DAIRY', 'POULTRY', 
             'MEATS', 'PERSONAL CARE', 'DELI', 'HOME CARE', 'EGGS', 'FROZEN FOODS'
         )
         family = st.selectbox("Select Item Family to Monitor", ITEM_FAMILIES)
         
-        # 2. Fetch Data Directly (Fix for the "not updating" bug)
-        # We fetch fresh data every time the app reruns (which happens on selection change)
-        redis_key = f"feature:sales_volume:{family}"
+        # Get today's date info
+        today = datetime.now()
+        
+        # Determine which key to query based on selection
+        if time_window == "Today":
+            date_key = today.strftime('%Y-%m-%d')
+            redis_key = f"feature:sales_daily:{family}:{date_key}"
+            label = f"Live Sales Today ({family})"
+        elif time_window == "This Week":
+            date_key = today.strftime('%Y-W%U') # %U = Week of year (Sunday as first day)
+            redis_key = f"feature:sales_weekly:{family}:{date_key}"
+            label = f"Live Sales This Week ({family})"
+        else: # This Month
+            date_key = today.strftime('%Y-%m')
+            redis_key = f"feature:sales_monthly:{family}:{date_key}"
+            label = f"Live Sales This Month ({family})"
+
+        
         val = redis.get(redis_key)
         current_volume = float(val) if val else 0.0
         
-        # 3. Refresh Button
-        # Clicking this just triggers a rerun, which re-executes the fetch above
         st.button("🔄 Refresh Live Data", use_container_width=True)
         
-        # 4. Display Metric
-        st.metric(label=f"Live 7-Day Rolling Sales ({family})", value=f"${current_volume:,.2f}")
+        st.metric(label=label, value=f"${current_volume:,.2f}")
         
-        st.info("The background worker (`live_stream.yml`) updates this value every 5 minutes.")
+        st.info("The background worker (`live_stream.yml`) updates these values every 5 minutes.")
 
         st.markdown("---")
         st.markdown("### System Architecture")
@@ -107,12 +125,12 @@ with col1:
                     }
 
                     STREAM [label="Redis Stream" fillcolor="#ffebee"]
-                    STORE [label="Redis\nFeature Store" shape=cylinder fillcolor="#fff3e0"]
+                    STORE [label="Redis\nTime-Bucketed Store" shape=cylinder fillcolor="#fff3e0"]
                     DASH [label="Dashboard" fillcolor="#e8f5e9"]
                     
                     PROD -> STREAM
                     PROC -> STREAM
-                    PROC -> STORE
+                    PROC -> STORE [label="updates 3 keys (Day, Week, Month)"]
                     DASH -> STORE
                 }
             ''')
@@ -128,7 +146,6 @@ with col2:
         st.subheader("🔮 Run On-Demand Prediction")
         st.caption("Predict sales for a specific store and date using the XGBoost model.")
         
-        # 1. Diverse Store List (One per city to avoid repetition)
         STORE_MAP = {
             "Quito (Main Branch) - Store 1": 1,
             "Santo Domingo - Store 5": 5,
@@ -144,12 +161,11 @@ with col2:
         }
         store_name = st.selectbox("Select Store Location", STORE_MAP.keys())
         
-        # 2. Date
         col_date, col_promo = st.columns(2)
         with col_date:
             prediction_date = st.date_input("Select Date", datetime.now())
         with col_promo:
-            st.write("") # Spacer
+            st.write("") 
             st.write("") 
             is_promo = st.toggle("APPLY PROMOTION?", value=False)
         
@@ -158,40 +174,59 @@ with col2:
         # Feature Prep
         month_feature = prediction_date.month
         day_of_week_feature = prediction_date.weekday()
+        day_of_month = prediction_date.day
+        year = prediction_date.year
         onpromotion_feature = 1 if is_promo else 0
         store_nbr_feature = STORE_MAP[store_name]
-
-        # Expander for clarity
+        
+        # Defaults for missing UI inputs (to prevent model crash)
+        DEFAULT_OIL = 45.0
+        DEFAULT_HOLIDAY = 0
+        DEFAULT_FAMILY = 12 
+        DEFAULT_CITY = 18   
+        DEFAULT_STATE = 12  
+        DEFAULT_TYPE = 3    
+        
         with st.expander("View Model Input Vector"):
-            st.code(f"""
-            {{
-                "store_nbr": {store_nbr_feature},
-                "onpromotion": {onpromotion_feature},
-                "month": {month_feature},
-                "day_of_week": {day_of_week_feature}
-            }}
-            """, language="json")
+            st.json({
+                "store_nbr": store_nbr_feature,
+                "family_encoded": DEFAULT_FAMILY,
+                "onpromotion": onpromotion_feature,
+                "dcoilwtico": DEFAULT_OIL,
+                "is_holiday": DEFAULT_HOLIDAY,
+                "city_encoded": DEFAULT_CITY,
+                "state_encoded": DEFAULT_STATE,
+                "type_encoded": DEFAULT_TYPE,
+                "day_of_week": day_of_week_feature,
+                "month": month_feature,
+                "year": year,
+                "day_of_month": day_of_month
+            })
 
         if st.button("🔮 Calculate Prediction", use_container_width=True, type="primary"):
             
-            # Create DataFrame
             input_data = pd.DataFrame({
                 'store_nbr': [store_nbr_feature],
+                'family_encoded': [DEFAULT_FAMILY],
                 'onpromotion': [onpromotion_feature],
+                'dcoilwtico': [DEFAULT_OIL],
+                'is_holiday': [DEFAULT_HOLIDAY],
+                'city_encoded': [DEFAULT_CITY],
+                'state_encoded': [DEFAULT_STATE],
+                'type_encoded': [DEFAULT_TYPE],
                 'day_of_week': [day_of_week_feature],
-                'month': [month_feature]
+                'month': [month_feature],
+                'year': [year],
+                'day_of_month': [day_of_month]
             })
             
-            # Get Prediction
             pred = model.predict(input_data)[0]
             
-            # Display
             st.subheader(f"Forecast for {prediction_date.strftime('%B %d, %Y')}")
             
             col_res1, col_res2 = st.columns([2, 1])
             with col_res1:
                 st.metric(label="Predicted Unit Sales", value=f"{pred:.2f}")
-            
             with col_res2:
                 if pred > 400:
                     st.error("🔥 HIGH DEMAND")

@@ -2,6 +2,7 @@ from upstash_redis import Redis
 import os
 from dotenv import load_dotenv
 import time
+from datetime import datetime
 
 # --- CONFIG ---
 load_dotenv()
@@ -36,7 +37,6 @@ print(f"🚀 Starting Batch Processor for consumer '{CONSUMER_NAME}'...")
 processed_count = 0
 while True:
     try:
-        # Read up to 100 messages (NO BLOCKING)
         response = redis.execute([
             "XREADGROUP", "GROUP", GROUP_NAME, CONSUMER_NAME, 
             "COUNT", "100",
@@ -52,32 +52,43 @@ while True:
         for message in stream_data:
             msg_id = message[0]
             fields_raw = message[1]
-            
-            # Parse fields
             data_dict = {fields_raw[i]: fields_raw[i+1] for i in range(0, len(fields_raw), 2)}
             
             item_family = data_dict.get('family')
             store_nbr = data_dict.get('store_nbr', '?')
-            event_date = data_dict.get('date', 'Unknown')
+            event_date_str = data_dict.get('date', None)
             sales = float(data_dict.get('sales', 0.0))
             
-            if not item_family:
-                # Skip invalid data but acknowledge it so we don't get stuck
+            if not item_family or not event_date_str:
                 redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id]) 
                 continue 
+            
+            # --- NEW: Time-Bucket Key Generation ---
+            try:
+                # Parse the date from the event
+                event_date = datetime.strptime(event_date_str, "%Y-%m-%d")
                 
-            feature_key = f"feature:sales_volume:{item_family}"
-            
-            # Update the feature store (Aggregation)
-            redis.incrbyfloat(feature_key, sales)
-            
-            # Acknowledge message
-            redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id])
-            processed_count += 1
-            
-            # --- IMPROVED LOGGING ---
-            # Shows Date and Store to prove data is "Live" and "Diverse"
-            print(f"  🔄 {event_date} | Store {store_nbr} | {item_family} | +${sales}")
+                # Create keys for Day, Week, and Month
+                key_daily = f"feature:sales_daily:{item_family}:{event_date.strftime('%Y-%m-%d')}"
+                key_weekly = f"feature:sales_weekly:{item_family}:{event_date.strftime('%Y-W%U')}" # %U = Week of year
+                key_monthly = f"feature:sales_monthly:{item_family}:{event_date.strftime('%Y-%m')}"
+
+                # Update all three aggregates at once
+                redis.incrbyfloat(key_daily, sales)
+                redis.incrbyfloat(key_weekly, sales)
+                redis.incrbyfloat(key_monthly, sales)
+                
+                # Acknowledge message
+                redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id])
+                processed_count += 1
+                
+                print(f"  🔄 {event_date_str} | Store {store_nbr} | {item_family} | +${sales}")
+
+            except ValueError:
+                # Date was in a weird format, skip it
+                print(f"  SKIPPED: Invalid date format {event_date_str}")
+                redis.execute(["XACK", STREAM_KEY, GROUP_NAME, msg_id]) 
+                continue
 
     except Exception as e:
         print(f"❌ Error during processing: {e}")
