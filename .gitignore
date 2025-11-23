@@ -36,16 +36,11 @@ chroma_db/
 # build_progress.json is now tracked
 
 # ML Models & Artifacts
-*.pkl
-*.joblib
 *.h5
 *.hdf5
 *.onnx
 *.pt
 *.pth
-best_model_v2.json
-long_term_forecast.pkl
-*_encoder.joblib
 
 # Logs
 *.log
