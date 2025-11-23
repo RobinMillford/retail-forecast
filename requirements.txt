@@ -7,7 +7,6 @@ python-dotenv
 scikit-learn
 kaggle
 prophet
-tensorflow
 joblib
 plotly
 chromadb
@@ -16,4 +15,3 @@ huggingface-hub
 groq
 streamlit-extras
 google-generativeai
-tf-keras

@@ -1,0 +1,21 @@
+# Minimal dependencies for model training
+# Used by: .github/workflows/retrain.yml
+
+# Data processing
+pandas
+numpy
+
+# Machine Learning
+xgboost
+scikit-learn
+prophet
+
+# MLOps
+mlflow
+joblib
+
+# Redis
+upstash-redis
+
+# Configuration
+python-dotenv

@@ -1,0 +1,11 @@
+# Minimal dependencies for live data streaming
+# Used by: .github/workflows/live_stream.yml
+
+# Data processing
+pandas
+
+# Redis streaming
+upstash-redis
+
+# Configuration
+python-dotenv
