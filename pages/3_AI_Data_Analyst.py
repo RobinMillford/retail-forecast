@@ -307,18 +307,19 @@ ANSWER:
             # Fallback to Gemini
             import google.generativeai as genai
             genai.configure(api_key=gemini_api_key)
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(full_prompt)
             return response.text
         
     except Exception as e:
         return f"AI Error: {e}"
 
-# --- MODERN HEADER ---
-st.markdown("""
+# --- HEADER (will be updated after DB loads) ---
+header_placeholder = st.empty()
+header_placeholder.markdown("""
 <div class="main-header">
     <h1 class="main-title">🤖 AI Data Analyst</h1>
-    <p class="subtitle">RAG-Powered Semantic Search • 875K+ Records • Llama 3.3 70B</p>
+    <p class="subtitle">RAG-Powered Semantic Search • Loading... • Llama 3.3 70B</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -344,9 +345,18 @@ st.divider()
 with st.spinner("Loading RAG-powered vector database..."):
     collection = load_vector_db()
     
-    # Update status metric with actual count
+    # Update status metric and header with actual count
     if collection:
-        col_status1.metric("🗄️ Vector DB", "Loaded", delta=f"{collection.count():,} records")
+        record_count = collection.count()
+        col_status1.metric("🗄️ Vector DB", "Loaded", delta=f"{record_count:,} records")
+        
+        # Update header with actual count
+        header_placeholder.markdown(f"""
+<div class="main-header">
+    <h1 class="main-title">🤖 AI Data Analyst</h1>
+    <p class="subtitle">RAG-Powered Semantic Search • {record_count:,} Records • Llama 3.3 70B</p>
+</div>
+""", unsafe_allow_html=True)
     else:
         col_status1.metric("🗄️ Vector DB", "Not Loaded", delta="Build required")
 
@@ -400,7 +410,7 @@ with st.expander("ℹ️ How This Works (RAG Architecture)", expanded=False):
     ---
     
     **✨ Features:**
-    - ✅ Query **any** of 875K+ records
+    - ✅ Query **any** of """ + (f"{collection.count():,}" if collection else "0") + """ records
     - ✅ Intelligent metadata filtering
     - ✅ Semantic search for fuzzy queries
     - ✅ Powered by Groq (fast & free!)

@@ -152,7 +152,67 @@ def main():
         est_batches = (remaining + BATCH_SIZE - 1) // BATCH_SIZE
         print(f"  ⏳ Remaining: {remaining:,} records (~{est_batches} more batches)")
     else:
-        print(f"  🎉 ALL RECORDS PROCESSED!")
+        print(f"  🎉 ALL HISTORICAL RECORDS PROCESSED!")
+        
+        # --- ADD LIVE DATA FROM REDIS ---
+        print("\n" + "=" * 60)
+        print("📡 Fetching Live Data from Redis...")
+        print("=" * 60)
+        
+        try:
+            from upstash_redis import Redis
+            
+            # Connect to Redis
+            redis_url = os.getenv("UPSTASH_REDIS_REST_URL")
+            redis_token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+            
+            if not redis_url or not redis_token:
+                print("  ⚠️ Redis credentials not found. Skipping live data.")
+            else:
+                redis_client = Redis(url=redis_url, token=redis_token)
+                
+                # Fetch training buffer (live data)
+                buffer_data = redis_client.get("training_buffer")
+                
+                if buffer_data:
+                    import json
+                    live_records = json.loads(buffer_data)
+                    
+                    if live_records and len(live_records) > 0:
+                        print(f"  ✅ Found {len(live_records)} live records in Redis")
+                        
+                        # Convert to DataFrame
+                        live_df = pd.DataFrame(live_records)
+                        
+                        # Ensure required columns
+                        if 'date' in live_df.columns and 'store_nbr' in live_df.columns:
+                            # Add to vector DB
+                            print(f"\n📥 Adding {len(live_df)} live records to vector database...")
+                            add_records_to_db(collection, live_df)
+                            
+                            # Update progress
+                            progress['total_processed'] = collection.count()
+                            progress['live_data_added'] = len(live_df)
+                            save_progress(progress)
+                            
+                            # Upload to Hugging Face
+                            print(f"\n📤 Uploading updated database with live data...")
+                            commit_msg = f"Complete: {progress['total_processed']:,} records (historical + {len(live_df)} live)"
+                            storage.upload_vector_db(local_db_path="./chroma_db", commit_message=commit_msg)
+                            
+                            print(f"\n  ✅ Live data successfully integrated!")
+                            print(f"  📊 Total records: {progress['total_processed']:,}")
+                        else:
+                            print("  ⚠️ Live data missing required columns (date, store_nbr)")
+                    else:
+                        print("  ℹ️ No live data found in Redis buffer")
+                else:
+                    print("  ℹ️ No training buffer found in Redis")
+        
+        except Exception as e:
+            print(f"  ❌ Error fetching live data: {e}")
+            print("  ℹ️ Continuing without live data...")
+
 
 if __name__ == "__main__":
     main()

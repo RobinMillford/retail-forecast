@@ -12,5 +12,8 @@ sentence-transformers
 # Hugging Face integration
 huggingface-hub
 
+# Redis (for live data integration)
+upstash-redis
+
 # Utilities
 python-dotenv
