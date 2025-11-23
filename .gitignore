@@ -32,8 +32,8 @@ chroma_db/
 *.sqlite3
 *.index
 
-# Build Progress (managed by GitHub Actions)
-build_progress.json
+# Build Progress - Allow commit for workflow tracking
+# build_progress.json is now tracked
 
 # ML Models & Artifacts
 *.pkl
