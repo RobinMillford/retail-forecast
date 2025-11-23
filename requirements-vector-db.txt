@@ -1,0 +1,16 @@
+# Minimal dependencies for vector DB building
+# Used by: .github/workflows/incremental_vector_build.yml
+
+# Core data processing
+pandas
+numpy
+
+# Vector DB and embeddings
+chromadb
+sentence-transformers
+
+# Hugging Face integration
+huggingface-hub
+
+# Utilities
+python-dotenv
