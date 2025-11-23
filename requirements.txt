@@ -10,3 +10,10 @@ prophet
 tensorflow
 joblib
 plotly
+chromadb
+sentence-transformers
+huggingface-hub
+groq
+streamlit-extras
+google-generativeai
+tf-keras

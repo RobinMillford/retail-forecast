@@ -1,15 +1,82 @@
 # Python
 venv/
+env/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
 
 # Data
 data/
+*.csv
+*.parquet
+*.feather
 
-# Secrets
+# Secrets & Environment
 .env
+.env.local
+.env.*.local
+*.key
+*.pem
 
-# Model (Optional - good to gitignore if > 100MB)
-# sales_model.json
+# Vector Database (RAG)
+chroma_db/
+*.db
+*.sqlite
+*.sqlite3
+*.index
+
+# Build Progress (managed by GitHub Actions)
+build_progress.json
+
+# ML Models & Artifacts
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.onnx
+*.pt
+*.pth
+best_model_v2.json
+long_term_forecast.pkl
+*_encoder.joblib
+
+# Logs
+*.log
+logs/
+mlruns/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Cache
+.cache/
+*.cache
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# System Files
+Thumbs.db
+desktop.ini
+
+# Optional
 test_setup.py
 retail_architecture.xml

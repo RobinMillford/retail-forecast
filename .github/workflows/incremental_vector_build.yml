@@ -1,0 +1,58 @@
+name: Incremental Vector DB Build
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  build-vector-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hours max
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download Dataset from Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          pip install kaggle
+          mkdir -p ./data
+          kaggle competitions download -c store-sales-time-series-forecasting -p ./data/
+          unzip -o ./data/*.zip -d ./data/
+          rm ./data/*.zip
+          echo "✅ All datasets extracted."
+          ls -lh ./data/
+
+      - name: Run Incremental Build
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
+        run: |
+          python scripts/incremental_build.py
+
+      - name: Commit Progress File
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions-bot@github.com'
+
+          git add build_progress.json
+
+          if git diff --staged --quiet; then
+            echo "No progress changes to commit."
+          else
+            git commit -m "🤖 Update vector DB build progress"
+            git push
+          fi
