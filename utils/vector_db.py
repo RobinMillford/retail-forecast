@@ -88,6 +88,12 @@ def add_records_to_db(collection, df: pd.DataFrame, batch_size: int = 1000):
     total_records = len(df)
     print(f"Adding {total_records:,} records to vector database...")
     
+    # Get the current max ID to avoid collisions
+    try:
+        existing_count = collection.count()
+    except:
+        existing_count = 0
+    
     for i in range(0, total_records, batch_size):
         batch = df.iloc[i:i+batch_size]
         
@@ -99,7 +105,8 @@ def add_records_to_db(collection, df: pd.DataFrame, batch_size: int = 1000):
         
         # Prepare metadata
         metadatas = []
-        for _, row in batch.iterrows():
+        ids = []
+        for idx, row in batch.iterrows():
             metadata = {
                 'date': str(row['date'].date()),
                 'store_nbr': int(row['store_nbr']),
@@ -118,9 +125,11 @@ def add_records_to_db(collection, df: pd.DataFrame, batch_size: int = 1000):
                 metadata['is_holiday'] = int(row['is_holiday'])
             
             metadatas.append(metadata)
-        
-        # Create unique IDs
-        ids = [f"record_{i+j}" for j in range(len(batch))]
+            
+            # Create unique ID based on data (date_store_family)
+            # This ensures each record has a truly unique ID
+            unique_id = f"{row['date'].date()}_{row['store_nbr']}_{row['family'].replace(' ', '_')}"
+            ids.append(unique_id)
         
         # Add to collection
         collection.add(
