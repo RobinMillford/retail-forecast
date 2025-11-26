@@ -126,9 +126,9 @@ def add_records_to_db(collection, df: pd.DataFrame, batch_size: int = 1000):
             
             metadatas.append(metadata)
             
-            # Create unique ID based on data (date_store_family)
-            # This ensures each record has a truly unique ID
-            unique_id = f"{row['date'].date()}_{row['store_nbr']}_{row['family'].replace(' ', '_')}"
+            # Create unique ID based on data + row index
+            # Format: date_store_family_rowindex
+            unique_id = f"{row['date'].date()}_{row['store_nbr']}_{row['family'].replace(' ', '_')}_{idx}"
             ids.append(unique_id)
         
         # Add to collection
