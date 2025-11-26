@@ -88,10 +88,32 @@ class HFVectorStorage:
             
             # Extract
             print(f"  📦 Extracting to {local_db_path}...")
-            os.makedirs(local_db_path, exist_ok=True)
+            
+            # Remove existing directory if force=True
+            if os.path.exists(local_db_path):
+                import shutil
+                shutil.rmtree(local_db_path)
+            
+            # Extract to temp location first
+            temp_extract = local_db_path + "_temp"
+            if os.path.exists(temp_extract):
+                import shutil
+                shutil.rmtree(temp_extract)
             
             with zipfile.ZipFile(zip_path, 'r') as zipf:
-                zipf.extractall(local_db_path)
+                zipf.extractall(temp_extract)
+            
+            # Check if there's a nested chroma_db folder
+            nested_path = os.path.join(temp_extract, "chroma_db")
+            if os.path.exists(nested_path):
+                # Move the nested folder to the target location
+                import shutil
+                shutil.move(nested_path, local_db_path)
+                shutil.rmtree(temp_extract)
+            else:
+                # No nesting, just rename temp to target
+                import shutil
+                shutil.move(temp_extract, local_db_path)
             
             print(f"  ✅ Vector database ready at {local_db_path}")
             
