@@ -91,75 +91,48 @@ st.markdown(
 # --- DATA LOADING (RAG-POWERED WITH HF AUTO-DOWNLOAD) ---
 @st.cache_resource
 def load_vector_db():
-    """Load the ChromaDB collection for RAG, auto-downloading from HF if needed."""
+    """Connect to Pinecone vector database for RAG."""
     try:
-        from utils.vector_db import init_chroma_db
-        from utils.hf_storage import HFVectorStorage
+        from utils.pinecone_client import get_pinecone_client
         
-        # Check if local DB exists
-        if not os.path.exists("./chroma_db") or len(os.listdir("./chroma_db")) == 0:
-            st.info("📥 Vector database not found locally. Downloading from Hugging Face...")
+        # Check for Pinecone credentials
+        if not os.getenv("PINECONE_API_KEY"):
+            st.warning("""
+            ⚠️ **Pinecone not configured**
             
-            # Get HF repo ID from environment
-            hf_repo_id = os.getenv("HF_REPO_ID")
-            hf_token = os.getenv("HF_TOKEN")
+            To use the vector database:
+            1. Set `PINECONE_API_KEY` in your `.env` file
+            2. Set `PINECONE_ENVIRONMENT` (e.g., `us-east-1-aws`)
+            3. Set `PINECONE_INDEX_NAME` (e.g., `retail-sales`)
             
-            if not hf_repo_id:
-                st.warning("""
-                ⚠️ **HF_REPO_ID not configured**
-                
-                To use the vector database:
-                1. Set `HF_REPO_ID` in your `.env` file
-                2. Example: `HF_REPO_ID=username/retail-sales-vector-db`
-                
-                Or run locally: `python scripts/build_vector_db.py`
-                """)
-                return None
-            
-            # Download from Hugging Face
-            try:
-                storage = HFVectorStorage(repo_id=hf_repo_id, token=hf_token)
-                with st.spinner("Downloading vector database from Hugging Face... (this may take 2-5 minutes)"):
-                    storage.download_vector_db(local_db_path="./chroma_db")
-                st.success("✅ Vector database downloaded successfully!")
-            except Exception as e:
-                st.error(f"❌ Error downloading from Hugging Face: {e}")
-                st.info("""
-                **Troubleshooting:**
-                - Ensure `HF_REPO_ID` is correct
-                - Check that the dataset exists on Hugging Face
-                - Verify you have internet connection
-                
-                **Alternative:** Run `python scripts/incremental_build.py` locally
-                """)
-                return None
-        
-        # Initialize ChromaDB
-        collection = init_chroma_db(persist_directory="./chroma_db")
-        
-        # Check if populated
-        count = collection.count()
-        if count == 0:
-            st.warning("⚠️ Vector database is empty.")
-            st.info("""
-            **First-time setup required:**
-            
-            Run this command to start building:
-            ```bash
-            python scripts/incremental_build.py
-            ```
-            
-            This will:
-            - Process 300K records at a time
-            - Upload to Hugging Face Hub
-            - Allow progressive use while building
+            Or run locally: `python scripts/pinecone_initial_load.py`
             """)
             return None
         
-        st.success(f"✅ Loaded vector database with {count:,} records")
-        return collection
+        # Connect to Pinecone
+        with st.spinner("Connecting to Pinecone..."):
+            client = get_pinecone_client()
+            stats = client.get_stats()
+        
+        # Check if populated
+        if stats['total_vectors'] == 0:
+            st.warning("⚠️ Pinecone index is empty.")
+            st.info("""
+            **First-time setup required:**
+            
+            Run this command to upload data:
+            ```bash
+            python scripts/pinecone_initial_load.py
+            ```
+            
+            This will upload the last 6 months of sales data to Pinecone.
+            """)
+            return None
+        
+        st.success(f"✅ Connected to Pinecone with {stats['total_vectors']:,} vectors")
+        return client
     except Exception as e:
-        st.error(f"❌ Error loading vector database: {e}")
+        st.error(f"❌ Error connecting to Pinecone: {e}")
         return None
 
 # Live data is now handled by GitHub Actions (incremental_build.py)
@@ -197,13 +170,13 @@ def parse_query_filters(prompt):
     
     return filters if filters else None
 
-def get_ai_response_rag(prompt, collection):
+def get_ai_response_rag(prompt, pinecone_client):
     """
-    RAG-powered AI response using ChromaDB for retrieval and Groq for generation.
+    RAG-powered AI response using Pinecone for retrieval and Groq for generation.
     
     Args:
         prompt: User's question
-        collection: ChromaDB collection
+        pinecone_client: Pinecone client instance
         
     Returns:
         AI-generated answer based on retrieved records
@@ -215,17 +188,15 @@ def get_ai_response_rag(prompt, collection):
     if not groq_api_key and not gemini_api_key:
         return "⚠️ No API key found. Please set GROQ_API_KEY or GEMINI_API_KEY in your .env file."
     
-    if collection is None:
-        return "❌ Vector database not available. Please run `python scripts/build_vector_db.py` to create it."
+    if pinecone_client is None:
+        return "❌ Vector database not available. Please run `python scripts/pinecone_initial_load.py` to create it."
     
     try:
-        from utils.vector_db import query_records
-        
         # 1. Parse query for filters
         filters = parse_query_filters(prompt)
         
-        # 2. Retrieve relevant records from ChromaDB (with filters if available)
-        relevant_records = query_records(collection, prompt, top_k=30, filters=filters)
+        # 2. Retrieve relevant records from Pinecone (with filters if available)
+        relevant_records = pinecone_client.query(prompt, top_k=30, filter=filters)
         
         if not relevant_records:
             filter_msg = f" with filters {filters}" if filters else ""
@@ -236,7 +207,7 @@ def get_ai_response_rag(prompt, collection):
                 st.info("🔍 **Trying without filters to see available data...**")
                 
                 # Query without filters
-                relevant_records_unfiltered = query_records(collection, prompt, top_k=10, filters=None)
+                relevant_records_unfiltered = pinecone_client.query(prompt, top_k=10, filter=None)
                 
                 if relevant_records_unfiltered:
                     st.success(f"Found {len(relevant_records_unfiltered)} records without filters. Here's a sample:")
@@ -252,7 +223,7 @@ def get_ai_response_rag(prompt, collection):
                     
                     st.write(f"**Available stores in results:** {sorted(sample_stores)}")
                     st.write(f"**Available families in results:** {sorted(sample_families)}")
-                    st.write(f"**Sample record:** {relevant_records_unfiltered[0]['text'][:200]}...")
+                    st.write(f"**Sample record:** {relevant_records_unfiltered[0]['metadata']['text'][:200]}...")
                     
                     return f"I couldn't find records matching your exact filters ({filters}), but I found similar data. Try asking about stores {sorted(sample_stores)} or product families like {', '.join(sorted(sample_families))}."
             
@@ -266,7 +237,7 @@ def get_ai_response_rag(prompt, collection):
         
         for i, record in enumerate(relevant_records[:20], 1):  # Limit to top 20 for context window
             context += f"**Record {i}:**\n"
-            context += f"{record['text']}\n\n"
+            context += f"{record['metadata']['text']}\n\n"
         
         # 4. Create prompt
         full_prompt = f"""You are an expert Retail Data Analyst with access to a comprehensive sales database.
@@ -342,23 +313,24 @@ with col_status4:
 st.divider()
 
 # --- LOAD VECTOR DATABASE ---
-with st.spinner("Loading RAG-powered vector database..."):
-    collection = load_vector_db()
+with st.spinner("Connecting to Pinecone vector database..."):
+    pinecone_client = load_vector_db()
     
     # Update status metric and header with actual count
-    if collection:
-        record_count = collection.count()
-        col_status1.metric("🗄️ Vector DB", "Loaded", delta=f"{record_count:,} records")
+    if pinecone_client:
+        stats = pinecone_client.get_stats()
+        record_count = stats['total_vectors']
+        col_status1.metric("🗄️ Vector DB", "Connected", delta=f"{record_count:,} vectors")
         
         # Update header with actual count
         header_placeholder.markdown(f"""
 <div class="main-header">
     <h1 class="main-title">🤖 AI Data Analyst</h1>
-    <p class="subtitle">RAG-Powered Semantic Search • {record_count:,} Records • Llama 3.3 70B</p>
+    <p class="subtitle">RAG-Powered Pinecone • {record_count:,} Vectors • Llama 3.3 70B</p>
 </div>
 """, unsafe_allow_html=True)
     else:
-        col_status1.metric("🗄️ Vector DB", "Not Loaded", delta="Build required")
+        col_status1.metric("🗄️ Vector DB", "Not Connected", delta="Setup required")
 
 # --- CHAT INTERFACE ---
 if "messages" not in st.session_state:
@@ -385,8 +357,8 @@ if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     # 2. Get AI Response using RAG
-    with st.spinner("Searching vector database and analyzing..."):
-        response = get_ai_response_rag(prompt, collection)
+    with st.spinner("Searching Pinecone and analyzing..."):
+        response = get_ai_response_rag(prompt, pinecone_client)
     
     # 3. Add AI Message
     st.session_state.messages.append({"role": "assistant", "content": response})
@@ -396,27 +368,29 @@ if prompt:
 
 # Info: How RAG Works
 with st.expander("ℹ️ How This Works (RAG Architecture)", expanded=False):
-    st.markdown("""
+    vector_count = pinecone_client.get_stats()['total_vectors'] if pinecone_client else 0
+    st.markdown(f"""
     <div class="info-card">
     
     **This AI uses Retrieval Augmented Generation (RAG):**
     
     1. **🔍 Your Question** → Converted to a vector embedding
     2. **🎯 Smart Filtering** → Extracts store, date, product filters
-    3. **📊 Semantic Search** → ChromaDB finds the most relevant sales records
+    3. **📊 Semantic Search** → Pinecone finds the most relevant sales records
     4. **📝 Context** → Top 20-30 records are sent to Llama 3.3 70B
     5. **💬 Answer** → AI generates a response based on retrieved data
     
     ---
     
     **✨ Features:**
-    - ✅ Query **any** of """ + (f"{collection.count():,}" if collection else "0") + """ records
+    - ✅ Query **any** of {vector_count:,} vectors
     - ✅ Intelligent metadata filtering
     - ✅ Semantic search for fuzzy queries
     - ✅ Powered by Groq (fast & free!)
-    - ✅ No rate limits
+    - ✅ Cloud-hosted on Pinecone
     
-    **📦 Database:** """ + (f"{collection.count():,} records" if collection else "Not loaded") + """
+    **📦 Database:** {vector_count:,} vectors on Pinecone
     
     </div>
     """, unsafe_allow_html=True)
+

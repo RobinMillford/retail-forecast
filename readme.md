@@ -3,7 +3,7 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://retail-forecast-redis.streamlit.app/)
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![XGBoost](https://img.shields.io/badge/ML-XGBoost-green)
-![ChromaDB](https://img.shields.io/badge/VectorDB-ChromaDB-purple)
+![Pinecone](https://img.shields.io/badge/VectorDB-Pinecone-purple)
 ![Groq](https://img.shields.io/badge/AI-Groq_Llama-blue)
 
 **[Live Demo](https://retail-forecast-redis.streamlit.app/)** | **[Architecture Diagram](retail_architecture.xml)**
@@ -80,55 +80,53 @@ User Adjusts (Oil/Promo/Holiday) → Modify Features → XGBoost.predict() → C
 - Runs predictions for both
 - Displays side-by-side comparison
 
-### **5. Vector DB Build (Incremental)**
+### **5. Vector DB Build (Automated)**
 
 ```
-train.csv → Batch 1 (300K) → Embeddings → ChromaDB → Upload to HF → Batch 2 → ... → Complete (3M+)
+train.csv → Load 500K Recent Records → Embeddings → Pinecone (Cloud) → Daily Updates
 ```
 
-- Processes 300K records at a time
+- Loads 500K most recent records
 - Generates text: "Date: 2017-12-25, Store: 5, Product: GROCERY, Sales: $1234"
 - Creates 384-dim embeddings (Sentence Transformers)
-- Stores in ChromaDB with metadata
-- Uploads batch to Hugging Face Hub
-- Repeats until all 3M+ records done
+- Uploads to Pinecone via API
+- Daily workflow adds new records automatically
 
 ### **6. AI Data Analyst (RAG)**
 
 ```
-Question → Parse Filters → Generate Embedding → ChromaDB Search → Retrieve Top-20 → Groq API → Answer
+Question → Parse Filters → Generate Embedding → Pinecone Search → Retrieve Top-20 → Groq API → Answer
 ```
 
 - User asks: "What were GROCERY sales in store 25?"
 - Extracts filters: `{store_nbr: 25, family: GROCERY}`
-- Searches 3M+ records using semantic similarity
-- Retrieves top 20 matching records
+- Searches 500K+ vectors using semantic similarity
+- Retrieves top 20 matching records from Pinecone
 - Sends to Groq (Llama 3.3 70B) with context
 - Generates answer with citations
 
 ### **7. App Loading (First Run)**
 
 ```
-User Visits → Check ChromaDB → Download from HF (if missing) → Cache → Load Models → Connect Redis → Ready!
+User Visits → Connect Pinecone → Load Models → Connect Redis → Ready!
 ```
 
-- Checks for local ChromaDB
-- Downloads from Hugging Face (one-time, ~5 min)
-- Streamlit Cloud caches database
+- Connects to Pinecone (cloud-hosted)
+- No download needed (instant access)
 - Loads ML models from repo
-- Connects to Redis
-- App ready to serve
+- Connects to Redis for live data
+- App ready to serve in seconds
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Category  | Technologies                                     |
-| --------- | ------------------------------------------------ |
-| **Data**  | Kaggle API, Redis Streams, Upstash Redis         |
-| **ML**    | XGBoost, Prophet, Sentence Transformers          |
-| **AI**    | Groq (Llama 3.3 70B), ChromaDB, Hugging Face Hub |
-| **MLOps** | GitHub Actions, MLflow, Streamlit Cloud          |
+| Category  | Technologies                                          |
+| --------- | ----------------------------------------------------- |
+| **Data**  | Kaggle API, Redis Streams, Upstash Redis              |
+| **ML**    | XGBoost, Prophet, Sentence Transformers               |
+| **AI**    | Groq (Llama 3.3 70B), Pinecone, Sentence Transformers |
+| **MLOps** | GitHub Actions, MLflow, Streamlit Cloud               |
 
 ---
 
@@ -148,8 +146,8 @@ User Visits → Check ChromaDB → Download from HF (if missing) → Cache → L
 
 ### 3. RAG-Powered AI Analyst
 
-- Natural language queries over 3M+ records
-- Semantic search with metadata filtering
+- Natural language queries over 500K+ vectors
+- Cloud-hosted semantic search via Pinecone
 - Sub-2s responses via Groq API
 
 **Example Questions:**
@@ -180,9 +178,10 @@ UPSTASH_REDIS_REST_URL=your_redis_url
 UPSTASH_REDIS_REST_TOKEN=your_redis_token
 GROQ_API_KEY=your_groq_key
 
-# For Vector DB
-HF_REPO_ID=username/retail-sales-vector-db
-HF_TOKEN=your_hf_token
+# For Vector DB (Pinecone)
+PINECONE_API_KEY=your_pinecone_key
+PINECONE_ENVIRONMENT=us-east-1-aws
+PINECONE_INDEX_NAME=retail-sales
 
 # Optional
 KAGGLE_USERNAME=your_username
@@ -195,10 +194,10 @@ KAGGLE_KEY=your_api_key
 streamlit run dashboard.py
 ```
 
-### 4. Build Vector DB (Optional)
+### 4. Upload Data to Pinecone (Optional)
 
 ```bash
-python scripts/incremental_build.py
+python scripts/pinecone_initial_load.py
 ```
 
 ---
@@ -225,24 +224,26 @@ retail_mlops/
 1. Get key: https://console.groq.com/
 2. Add to `.env`: `GROQ_API_KEY=gsk_...`
 
-### Hugging Face
+### Pinecone
 
-1. Create token: https://huggingface.co/settings/tokens
-2. Create dataset: https://huggingface.co/new-dataset
-3. Add to `.env`:
+1. Sign up: https://www.pinecone.io/
+2. Create index: `retail-sales` (384 dimensions, cosine)
+3. Get API key from dashboard
+4. Add to `.env`:
    ```
-   HF_REPO_ID=username/retail-sales-vector-db
-   HF_TOKEN=hf_...
+   PINECONE_API_KEY=your-key
+   PINECONE_ENVIRONMENT=us-east-1-aws
+   PINECONE_INDEX_NAME=retail-sales
    ```
 
 ---
 
 ## 🎯 Performance
 
-- **Vector DB:** 3M+ records, 384-dim embeddings
+- **Vector DB:** 500K+ vectors, 384-dim embeddings (Pinecone)
 - **Query Latency:** <2s (search + LLM)
 - **Model Accuracy:** RMSE ~500
-- **Uptime:** 99.9% (Streamlit Cloud)
+- **Uptime:** 99.9% (Streamlit Cloud + Pinecone)
 
 ---
 
@@ -263,6 +264,6 @@ retail_mlops/
 
 ## 🙏 Credits
 
-Kaggle • Groq • Hugging Face • Streamlit • Upstash
+Kaggle • Groq • Pinecone • Streamlit • Upstash
 
 **⭐ Star this repo if you find it helpful!**

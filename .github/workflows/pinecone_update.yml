@@ -1,0 +1,63 @@
+name: Daily Pinecone Update
+
+on:
+  schedule:
+    - cron: "30 0 * * *" # Run at 00:30 UTC (30 mins after training)
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-pinecone:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas python-dotenv pinecone-client sentence-transformers kaggle
+
+      - name: Download Latest Data from Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          mkdir -p ./data
+          kaggle competitions download -c store-sales-time-series-forecasting -p ./data/
+          unzip -o ./data/*.zip -d ./data/
+          rm ./data/*.zip
+          echo "✅ Latest data downloaded"
+
+      - name: Initial Load (if incomplete)
+        env:
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+          PINECONE_INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
+        run: |
+          python -c "
+          from utils.pinecone_client import get_pinecone_client
+          import subprocess
+
+          client = get_pinecone_client()
+          stats = client.get_stats()
+          current_count = stats['total_vectors']
+          target_count = 500000
+
+          if current_count < target_count:
+              print(f'📥 Index has {current_count:,} vectors (target: {target_count:,}). Running initial load...')
+              subprocess.run(['python', 'scripts/pinecone_initial_load.py'], check=True)
+          else:
+              print(f'✅ Index already has {current_count:,} vectors. Skipping initial load.')
+          "
+
+      - name: Daily Update (add new records)
+        env:
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+          PINECONE_INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
+        run: python scripts/pinecone_daily_update.py
