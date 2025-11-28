@@ -20,7 +20,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install pandas python-dotenv pinecone-client sentence-transformers kaggle
+          pip install pandas python-dotenv pinecone sentence-transformers kaggle
 
       - name: Download Latest Data from Kaggle
         env:

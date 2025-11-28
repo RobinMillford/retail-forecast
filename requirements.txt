@@ -15,5 +15,4 @@ huggingface-hub
 groq
 streamlit-extras
 google-generativeai
-pinecone-client
 pinecone
