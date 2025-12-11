@@ -129,9 +129,63 @@ with mlflow.start_run(run_name="Nightly_Pipeline_Run") as parent_run:
         print(f"  ✅ XGBoost MAE: {mae:.4f}")
         mlflow.log_metric("mae", mae)
         
-        model.save_model("best_model_v2.json")
-        mlflow.log_artifact("best_model_v2.json")
+        # Robust model save (replaces single model.save_model call)
+        try:
+            # Print package versions for debugging
+            try:
+                from importlib.metadata import version
+                print("xgboost version:", version("xgboost"))
+                print("scikit-learn version:", version("scikit-learn"))
+            except Exception:
+                pass
 
+            print("Model object type:", type(model))
+            print("_estimator_type:", getattr(model, "_estimator_type", None))
+
+            # If model is wrapped in a Pipeline, try to extract final estimator
+            estimator = model
+            try:
+                if hasattr(model, "named_steps"):
+                    estimator = list(model.named_steps.values())[-1]
+                elif hasattr(model, "steps"):
+                    estimator = model.steps[-1][1]
+            except Exception:
+                estimator = model
+
+            saved = False
+            # Try sklearn wrapper save first
+            try:
+                estimator.save_model("best_model_v2.json")
+                saved = True
+                print("Saved model using estimator.save_model")
+            except Exception as e:
+                print("estimator.save_model failed:", e)
+                # Fallback: try underlying Booster
+                try:
+                    booster = getattr(estimator, "get_booster", lambda: estimator)()
+                    booster.save_model("best_model_v2.json")
+                    saved = True
+                    print("Saved model using booster.save_model")
+                except Exception as e2:
+                    print("booster.save_model failed:", e2)
+                    # Last resort: temporarily set _estimator_type then retry (hack)
+                    try:
+                        setattr(estimator, "_estimator_type", "regressor")
+                        estimator.save_model("best_model_v2.json")
+                        saved = True
+                        print("Saved model after setting _estimator_type")
+                    except Exception as e3:
+                        print("All attempts to save model failed:", e3)
+                        raise
+
+            if saved and os.path.exists("best_model_v2.json"):
+                mlflow.log_artifact("best_model_v2.json")
+            else:
+                print("Model file not found; skipping mlflow.log_artifact for best_model_v2.json")
+        except Exception as exc:
+            print("Error while saving/logging model artifact:", exc)
+            raise
+        
     # ==========================
     # CHILD RUN 2: Prophet (FIXED METRICS)
     # ==========================
